@@ -3,6 +3,7 @@
 #include <geometry_msgs/msg/point.hpp>
 #include <rclcpp_components/register_node_macro.hpp>
 #include <std_msgs/msg/int8.hpp>
+#include <std_msgs/msg/uint16.hpp>
 
 namespace solution {
 
@@ -15,7 +16,16 @@ public:
     RCLCPP_INFO(get_logger(), "%s", preempt ? "Preempt" : "Queue");
 
     _motor1 = create_publisher<std_msgs::msg::Int8>("motor_1/control", rclcpp::QoS(rclcpp::KeepLast(10)).reliable().transient_local());
+    _motor2 = create_publisher<std_msgs::msg::Int8>("motor_2/control", rclcpp::QoS(rclcpp::KeepLast(10)).reliable().transient_local());
+    _encoder1 = create_subscription<std_msgs::msg::UInt16>("motor_1/encoder", 10,
+      [this](const std_msgs::msg::UInt16::SharedPtr msg) {
+        (void)msg;
+      });
 
+    _encoder2 = create_subscription<std_msgs::msg::UInt16>("motor_2/encoder", 10,
+      [this](const std_msgs::msg::UInt16::SharedPtr msg) {
+        (void)msg;
+      });
     _target = create_subscription<geometry_msgs::msg::Point>("target", rclcpp::QoS(rclcpp::KeepLast(10)).reliable().transient_local(),
       [this](const geometry_msgs::msg::Point::SharedPtr point) {
         RCLCPP_INFO(get_logger(), "Target: (%g, %g, %g)", point->x, point->y, point->z);
@@ -28,6 +38,9 @@ public:
 
 private:
   rclcpp::Publisher<std_msgs::msg::Int8>::SharedPtr _motor1;
+  rclcpp::Publisher<std_msgs::msg::Int8>::SharedPtr _motor2;
+  rclcpp::Subscription<std_msgs::msg::UInt16>::SharedPtr _encoder1;
+  rclcpp::Subscription<std_msgs::msg::UInt16>::SharedPtr _encoder2;
   rclcpp::Subscription<geometry_msgs::msg::Point>::SharedPtr _target;
 };
 
