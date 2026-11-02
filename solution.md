@@ -44,4 +44,4 @@ Parametry (1 tick około 0,09°):
 
 Pierwsza wersja jechała stałym sygnałem +/-100 i wysyłała 0 po wjechaniu w strefę tolerancji. Ponieważ silnik po wysłaniu 0 jeszcze się toczy, tolerancję dobrałem blisko zmierzonej drogi hamowania (15 ticków dla silnika 1 i 7 dla silnika 2) - silnik zaczynał hamować tuż przed celem i zatrzymywał się prawie na nim. W trybie kolejki cel był zaliczany dopiero po tylu próbkach w strefie, ile trwa hamowanie, żeby następny punkt nie startował, zanim silnik stanie. Przy długich ruchach z testów błąd był do 4 ticków, ale przy krótkich silnik nie zdążył się rozpędzić i stawał nawet 9 ticków przed celem.
 
-Potem dodałem stopniowe zmniejszanie prędkości, które rozwiązało ten problem - silnik dojeżdża wolno, więc prawie się nie toczy i tolerancję mogłem zmniejszyć do 5 ticków. Co naprawiło ten problem.
+Potem dodałem stopniowe zmniejszanie prędkości, które rozwiązało ten problem - silnik dojeżdża wolno, więc prawie się nie toczy i tolerancję mogłem zmniejszyć do 5 ticków.
