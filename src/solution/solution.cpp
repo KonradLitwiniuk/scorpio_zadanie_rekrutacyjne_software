@@ -18,77 +18,17 @@ public:
     RCLCPP_INFO(get_logger(), "%s", preempt_mode ? "Preempt" : "Queue");
     _motor1 = create_publisher<std_msgs::msg::Int8>("motor_1/control", rclcpp::QoS(rclcpp::KeepLast(10)).reliable().transient_local());
     _motor2 = create_publisher<std_msgs::msg::Int8>("motor_2/control", rclcpp::QoS(rclcpp::KeepLast(10)).reliable().transient_local());
+
     _encoder1 = create_subscription<std_msgs::msg::UInt16>("motor_1/encoder", 10,
       [this](const std_msgs::msg::UInt16::SharedPtr msg) {
-        if(preempt_mode){
-          uint16_t position_motor_1 = msg->data;
-          double difference = position_motor_1 - motor_1_points_to_move;
-          if(difference > 2048)
-          {
-            difference -= 4096;
-          }
-          else if(difference < -2048)
-          {
-            difference += 4096;
-          }
-          if(abs(difference) < 10)
-          {
-           std_msgs::msg::Int8 cmd;
-           cmd.data = 0;
-            _motor1->publish(cmd);
-          }
-          else if(difference > 0)
-          {
-            std_msgs::msg::Int8 cmd;
-           cmd.data = -100;
-            _motor1->publish(cmd);
-          }
-          else{
-            std_msgs::msg::Int8 cmd;
-            cmd.data = 100;
-            _motor1->publish(cmd);
-          }
-        }
-        else{
-          uint16_t position_motor_1 = msg->data;
-          if(done2 && done1 && !points.empty())
-          {
-            done1 = false;
-            done2 = false;
-            current_point = points.front();
-            points.pop();
-            counter1 = 0; 
-            counter2 = 0; 
-          }
-          double difference = position_motor_1 - current_point.first;
-          if(difference > 2048)
-          {
-            difference -= 4096;
-          }
-          else if(difference < -2048)
-          {
-            difference += 4096;
-          }
-          if(abs(difference) < 10)
-          {
-           std_msgs::msg::Int8 cmd;
-           cmd.data = 0;
-            _motor1->publish(cmd);
+        if (preempt_mode) {
+          driveMotor(_motor1, msg->data, motor_1_points_to_move, kToleranceMotor1);
+        } else {
+          nextPointIfDone();
+          if (driveMotor(_motor1, msg->data, current_point.first, kToleranceMotor1)) {
             counter1++;
           }
-          else if(difference > 0)
-          {
-            std_msgs::msg::Int8 cmd;
-           cmd.data = -100;
-            _motor1->publish(cmd);
-           
-          }
-          else{
-            std_msgs::msg::Int8 cmd;
-            cmd.data = 100;
-            _motor1->publish(cmd);
-          }
-          if(counter1 > 9){
+          if (counter1 >= kSettleSamplesMotor1) {
             done1 = true;
           }
         }
@@ -96,93 +36,34 @@ public:
 
     _encoder2 = create_subscription<std_msgs::msg::UInt16>("motor_2/encoder", 10,
       [this](const std_msgs::msg::UInt16::SharedPtr msg) {
-        if(preempt_mode){
-          uint16_t position_motor_2 = msg->data;
-          double difference = position_motor_2 - motor_2_points_to_move;
-          if(difference > 2048)
-          {
-            difference -= 4096;
+        if (preempt_mode) {
+          driveMotor(_motor2, msg->data, motor_2_points_to_move, kToleranceMotor2);
+        } else {
+          nextPointIfDone();
+          if (driveMotor(_motor2, msg->data, current_point.second, kToleranceMotor2)) {
+            counter2++;
           }
-          else if(difference < -2048)
-          {
-            difference += 4096;
-          }
-          if(abs(difference) < 10)
-          {
-           std_msgs::msg::Int8 cmd;
-           cmd.data = 0;
-            _motor2->publish(cmd);
-          }
-          else if(difference > 0)
-          {
-            std_msgs::msg::Int8 cmd;
-           cmd.data = -100;
-            _motor2->publish(cmd);
-          
-          }
-          else{
-            std_msgs::msg::Int8 cmd;
-            cmd.data = 100;
-            _motor2->publish(cmd);
-          }
-        }
-        else{
-          uint16_t position_motor_2 = msg->data;
-          if(done2 && done1 && !points.empty())
-          {
-            done1 = false;
-            done2 = false;
-            current_point = points.front();
-            points.pop();
-            counter1 = 0; 
-            counter2 = 0; 
-          }
-          double difference = position_motor_2 - current_point.second;
-          if(difference > 2048)
-          {
-            difference -= 4096;
-          }
-          else if(difference < -2048)
-          {
-            difference += 4096;
-          }
-          if(abs(difference) < 10)
-          {
-           std_msgs::msg::Int8 cmd;
-           cmd.data = 0;
-            _motor2->publish(cmd);
-                       counter2++;
-          }
-          else if(difference > 0)
-          {
-            std_msgs::msg::Int8 cmd;
-           cmd.data = -100;
-            _motor2->publish(cmd);
-
-          }
-          else{
-            std_msgs::msg::Int8 cmd;
-            cmd.data = 100;
-            _motor2->publish(cmd);
-          }
-          if(counter2 > 9){
+          if (counter2 >= kSettleSamplesMotor2) {
             done2 = true;
           }
         }
-        
-        
       });
+
     _target = create_subscription<geometry_msgs::msg::Point>("target", rclcpp::QoS(rclcpp::KeepLast(10)).reliable().transient_local(),
       [this](const geometry_msgs::msg::Point::SharedPtr point) {
         RCLCPP_INFO(get_logger(), "Target: (%g, %g, %g)", point->x, point->y, point->z);
-        motor_1_points_to_move = -(atan2(point->y, point->x) / (2 * M_PI)) * 4096; //todo zmienic to bo t nie bedzie dzialac z queue
-        motor_2_points_to_move = (atan2(point->z, sqrt(point->x * point->x + point->y * point->y)) / (2 * M_PI)) * 4096;
+        motor_1_points_to_move = -(atan2(point->y, point->x) / (2 * M_PI)) * kEncoderTicks;
+        motor_2_points_to_move = (atan2(point->z, sqrt(point->x * point->x + point->y * point->y)) / (2 * M_PI)) * kEncoderTicks;
         if (motor_1_points_to_move < 0)
         {
-          motor_1_points_to_move += 4096; 
+          motor_1_points_to_move += kEncoderTicks;
         }
-        if(!preempt_mode)
-        {  
+        if (motor_2_points_to_move < 0)
+        {
+          motor_2_points_to_move += kEncoderTicks;
+        }
+        if (!preempt_mode)
+        {
           std::pair<double, double> point_calculated = {motor_1_points_to_move, motor_2_points_to_move};
           points.push(point_calculated);
         }
@@ -190,13 +71,69 @@ public:
   }
 
 private:
+  // Pozycje enkodera na obrot
+  static constexpr double kEncoderTicks = 4096.0;
+  static constexpr double kHalfTurn = kEncoderTicks / 2;
+  static constexpr int8_t kSpeed = 100;
+  
+  //silnik 1: 17 tickow
+  static constexpr double kToleranceMotor1 = 15.0;
+  //droga hamowania z sygnalu 100 silnik 2: 6-9 tickow
+  static constexpr double kToleranceMotor2 = 7.0;
+  //czas hamowania silnik 1: 10 probek
+  static constexpr int kSettleSamplesMotor1 = 10;
+  //czas hamowania silnik 2: 5 probek
+  static constexpr int kSettleSamplesMotor2 = 6;
+
+  bool driveMotor(const rclcpp::Publisher<std_msgs::msg::Int8>::SharedPtr& motor,
+                  uint16_t position, double target, double tolerance)
+  {
+    double difference = position - target;
+    if (difference > kHalfTurn)
+    {
+      difference -= kEncoderTicks;
+    }
+    else if (difference < -kHalfTurn)
+    {
+      difference += kEncoderTicks;
+    }
+
+    std_msgs::msg::Int8 cmd;
+    if (std::abs(difference) < tolerance)
+    {
+      cmd.data = 0;
+    }
+    else if (difference > 0)
+    {
+      cmd.data = -kSpeed;
+    }
+    else
+    {
+      cmd.data = kSpeed;
+    }
+    motor->publish(cmd);
+    return cmd.data == 0;
+  }
+  void nextPointIfDone()
+  {
+    if (done2 && done1 && !points.empty())
+    {
+      done1 = false;
+      done2 = false;
+      current_point = points.front();
+      points.pop();
+      counter1 = 0;
+      counter2 = 0;
+    }
+  }
+
   rclcpp::Publisher<std_msgs::msg::Int8>::SharedPtr _motor1;
   rclcpp::Publisher<std_msgs::msg::Int8>::SharedPtr _motor2;
   rclcpp::Subscription<std_msgs::msg::UInt16>::SharedPtr _encoder1;
   rclcpp::Subscription<std_msgs::msg::UInt16>::SharedPtr _encoder2;
   rclcpp::Subscription<geometry_msgs::msg::Point>::SharedPtr _target;
-  double motor_1_points_to_move;
-  double motor_2_points_to_move;
+  double motor_1_points_to_move = 0.0;
+  double motor_2_points_to_move = 0.0;
   int counter1 = 0;
   int counter2 = 0;
   bool done1 = true;
@@ -206,6 +143,6 @@ private:
   bool preempt_mode;
 };
 
-} 
+}
 
 RCLCPP_COMPONENTS_REGISTER_NODE(solution::Solution)
