@@ -22,12 +22,14 @@ public:
     _encoder1 = create_subscription<std_msgs::msg::UInt16>("motor_1/encoder", 10,
       [this](const std_msgs::msg::UInt16::SharedPtr msg) {
         if (preempt_mode) {
-          driveMotor(_motor1, msg->data, motor_1_points_to_move, kToleranceMotor1);
+          driveMotor(_motor1, msg->data, motor_1_points_to_move, kToleranceMotor1, kGainMotor1);
         } else {
           nextPointIfDone();
-          if (driveMotor(_motor1, msg->data, current_point.first, kToleranceMotor1)) {
+          if (driveMotor(_motor1, msg->data, current_point.first, kToleranceMotor1, kGainMotor1)) {
             counter1++;
           }
+          else { 
+            counter1 = 0; }
           if (counter1 >= kSettleSamplesMotor1) {
             done1 = true;
           }
@@ -37,11 +39,13 @@ public:
     _encoder2 = create_subscription<std_msgs::msg::UInt16>("motor_2/encoder", 10,
       [this](const std_msgs::msg::UInt16::SharedPtr msg) {
         if (preempt_mode) {
-          driveMotor(_motor2, msg->data, motor_2_points_to_move, kToleranceMotor2);
+          driveMotor(_motor2, msg->data, motor_2_points_to_move, kToleranceMotor2, kGainMotor2);
         } else {
           nextPointIfDone();
-          if (driveMotor(_motor2, msg->data, current_point.second, kToleranceMotor2)) {
+          if (driveMotor(_motor2, msg->data, current_point.second, kToleranceMotor2, kGainMotor2)) {
             counter2++;
+          }
+          else { counter2 = 0; 
           }
           if (counter2 >= kSettleSamplesMotor2) {
             done2 = true;
@@ -74,19 +78,25 @@ private:
   // Pozycje enkodera na obrot
   static constexpr double kEncoderTicks = 4096.0;
   static constexpr double kHalfTurn = kEncoderTicks / 2;
+  //max sygnal
   static constexpr int8_t kSpeed = 100;
-  
-  //silnik 1: 17 tickow
-  static constexpr double kToleranceMotor1 = 15.0;
-  //droga hamowania z sygnalu 100 silnik 2: 6-9 tickow
-  static constexpr double kToleranceMotor2 = 7.0;
+
+// Tolerancja dojazdu
+  static constexpr double kToleranceMotor1 = 5.0;
+  static constexpr double kToleranceMotor2 = 5.0;  
   //czas hamowania silnik 1: 10 probek
   static constexpr int kSettleSamplesMotor1 = 10;
   //czas hamowania silnik 2: 5 probek
   static constexpr int kSettleSamplesMotor2 = 6;
+  //silnik 1: pelna predkosc do ok 100 tickow od celu
+  static constexpr double kGainMotor1 = 1.0;
+  //silnik 2: pelna predkosc do ok 60 tickow od celu
+  static constexpr double kGainMotor2 = 1.5;
+  //ponizej za wolno
+  static constexpr int kMinSpeed = 50;
 
   bool driveMotor(const rclcpp::Publisher<std_msgs::msg::Int8>::SharedPtr& motor,
-                  uint16_t position, double target, double tolerance)
+                  uint16_t position, double target, double tolerance, double gain)
   {
     double difference = position - target;
     if (difference > kHalfTurn)
@@ -103,16 +113,40 @@ private:
     {
       cmd.data = 0;
     }
-    else if (difference > 0)
-    {
-      cmd.data = -kSpeed;
-    }
     else
     {
-      cmd.data = kSpeed;
+      double signal = -difference * gain;
+      if (signal > kSpeed)
+      {
+        signal = kSpeed;
+      }
+      else if (signal < -kSpeed)
+      {
+        signal = -kSpeed;
+      }
+      if (signal > 0 && signal < kMinSpeed)
+{
+  signal = kMinSpeed;
+}
+else if (signal < 0 && signal > -kMinSpeed)
+{
+  signal = -kMinSpeed;
+}
+      cmd.data = static_cast<int8_t>(std::round(signal));
     }
+
+    // Poprzednie rozwiazanie (stala predkosc +/- kSpeed):
+    // else if (difference > 0)
+    // {
+    //   cmd.data = -kSpeed;
+    // }
+    // else
+    // {
+    //   cmd.data = kSpeed;
+    // }
+
     motor->publish(cmd);
-    return cmd.data == 0;
+    return std::abs(difference) < tolerance;
   }
   void nextPointIfDone()
   {

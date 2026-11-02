@@ -17,9 +17,9 @@ Przy liczeniu różnicy pozycja - cel sprowadzam ją do zakresu [-2048, 2048], �
 
 ## Sterowanie
 
-Silnik jedzie z sygnałem ±100, a gdy jest bliżej celu niż tolerancja, dostaje 0. Silniki mają bezwładność i po wysłaniu 0 jeszcze się toczą, więc tolerancję dobrałem tak, żeby była zbliżona do drogi hamowania - wtedy silnik zatrzymuje się prawie na celu.
+Prędkość silnika zależy od odległości od celu: sygnał = -wzmocnienie * różnica, obcięty do +/-100 i podbity do minimum 50, gdy wychodzi za mały. W strefie +/-5 ticków wysyłam 0.
 
-W trybie kolejki cel jest zaliczony, gdy silnik jest w strefie przez tyle próbek, ile trwa hamowanie. Następny cel jest brany dopiero, gdy oba silniki zaliczą obecny.
+Dzięki temu silnik jedzie pełną prędkością daleko od celu, a przy dojeździe zwalnia.
 
 ## Pomiary
 
@@ -30,17 +30,18 @@ Sterowałem silnikami ręcznie (`ros2 topic pub`) i czytałem enkodery (`ros2 to
 | prędkość przy 100 | ~55 ticków/s | ~80 ticków/s |
 | droga hamowania od 100 | ~17 ticków | ~6-9 ticków |
 | czas hamowania | ~10 próbek | ~5 próbek |
+| prędkość przy 30 | ~5 ticków/s | - |
 
-Na tej podstawie:
-- tolerancja: 15 ticków dla silnika 1, 7 dla silnika 2 (1 tick ≈ 0,09°)
+Przy minimum 50 silnik 1 jedzie ~14 ticków/s.
+
+Parametry (1 tick około 0,09°):
+- wzmocnienie: 1.0 dla silnika 1 pełna prędkość od 100 ticków, 1.5 dla silnika 2 od 65 ticków.
+- sygnał minimalny: 50
+- tolerancja: 5 ticków dla obu.
 - próbki do zaliczenia celu: 10 dla silnika 1, 6 dla silnika 2
 
-## Testy
+## Historia
 
-Przykłady z README (pojedynczy cel, preempt, kolejka) - wszystkie cele osiągnięte, w preempt porzucane poprawnie, w kolejce po kolei. Największy błąd końcowy to 4 ticki (~0,35°).
+Pierwsza wersja jechała stałym sygnałem +/-100 i wysyłała 0 po wjechaniu w strefę tolerancji. Ponieważ silnik po wysłaniu 0 jeszcze się toczy, tolerancję dobrałem blisko zmierzonej drogi hamowania (15 ticków dla silnika 1 i 7 dla silnika 2) - silnik zaczynał hamować tuż przed celem i zatrzymywał się prawie na nim. W trybie kolejki cel był zaliczany dopiero po tylu próbkach w strefie, ile trwa hamowanie, żeby następny punkt nie startował, zanim silnik stanie. Przy długich ruchach z testów błąd był do 4 ticków, ale przy krótkich silnik nie zdążył się rozpędzić i stawał nawet 9 ticków przed celem.
 
-## Ograniczenia
-
-Przy krótkich ruchach silnik nie zdąży się rozpędzić i zatrzymuje się bliżej krawędzi strefy, więc błąd może dojść do wartości tolerancji (~1,3° dla silnika 1). W teście z krótkimi ruchami (13-22 ticki) silnik 1 zatrzymywał się 7-9 ticków przed celem (~0,8°).
-
-W kolejnym kroku spróbuję dodać stopniowe zmniejszanie prędkości w miarę zbliżania się do celu. Wtedy silnik dojeżdżałby wolno i można by zmniejszyć tolerancję niezależnie od długości ruchu.
+Potem dodałem stopniowe zmniejszanie prędkości, które rozwiązało ten problem - silnik dojeżdża wolno, więc prawie się nie toczy i tolerancję mogłem zmniejszyć do 5 ticków. Co naprawiło ten problem.
